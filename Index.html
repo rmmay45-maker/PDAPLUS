@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+  <title>PDA · MaySystems + persistent file storage</title>
+  <style>
+    /* ----- PDA original (dark) + file storage adaptations ----- */
+    :root {
+      --bg: #0f1226;
+      --paper: #101631;
+      --paper-2: #0b0f23;
+      --ink: #f5f7ff;
+      --muted: #b8c0ff;
+      --accent: #7cffcb;
+      --accent-2: #74f2ce;
+      --tab-1: #ff6b6b;
+      --tab-2: #ffd166;
+      --tab-3: #06d6a0;
+      --tab-4: #118ab2;
+      --tab-5: #ef476f;
+      --tab-6: #9b5de5;
+      --tab-7: #f15bb5;
+      --tab-8: #00bbf9;
+      --tab-9: #00f5d4;
+      --tab-10: #ff9f1c;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --ring: 0 0 0 3px rgba(255,255,255,.15);
+      --page-flip: 420ms cubic-bezier(.2,.8,.2,1);
+      --status-out: #ff6b6b;
+      --status-in: #06d6a0;
+      --status-done: #118ab2;
+      --status-hold: #ffd166;
+      --status-free: #8b4513;
+      --house-free: #2ecc71;
+      --house-out: #3498db;
+      --house-in: #f1c40f;
+      --house-co: #9b59b6;
+      --house-hold: #e74c3c;
+      --house-done: #f15bb5;
+      --house-inactive: #101631;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: linear-gradient(160deg, #0a0d1e, #171c3f 55%, #0a0f2e);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+      color: var(--ink);
+    }
+
+    .wrap {
+      height: 100%;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .book {
+      position: relative;
+      width: 100%;
+      height: 88vh;
+      max-height: 880px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0;
+    }
+
+    .page {
+      background: linear-gradient(180deg, var(--paper), var(--paper-2));
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header.appbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      background: linear-gradient(180deg, rgba(255,255,255,.06), transparent);
+    }
+
+    .title { font-weight: 700; letter-spacing: .3px; }
+    .actions { display: flex; gap: 8px; }
+
+    .btn {
+      background: rgba(255,255,255,.08);
+      color: var(--ink);
+      border: none;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 600;
+      box-shadow: var(--ring);
+      backdrop-filter: blur(6px);
+      cursor: pointer;
+    }
+    .btn:active { transform: translateY(1px); }
+
+    .content {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .view {
+      position: absolute;
+      inset: 0;
+      overflow: auto;
+      padding: 14px 14px 18px 14px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(14px) rotateY(-9deg);
+      transform-origin: left center;
+      transition: opacity var(--page-flip), transform var(--page-flip);
+    }
+
+    .view.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0) rotateY(0deg);
+    }
+
+    /* calendar, todo, etc */
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 10px; }
+    .calendar-header { font-weight: bold; text-align: center; padding: 8px; background: rgba(255,255,255,.1); border-radius: 6px; }
+    .calendar-day { height: 60px; border: 1px solid rgba(255,255,255,.1); border-radius: 6px; padding: 4px; cursor: pointer; background: rgba(255,255,255,.05); position: relative; }
+    .calendar-day:hover { background: rgba(255,255,255,.1); }
+    .calendar-day.other-month { opacity: 0.4; }
+    .calendar-day.today { border-color: var(--accent); background: rgba(124, 255, 203, 0.1); }
+    .calendar-day.selected { border: 2px solid var(--accent); }
+    .calendar-day.has-event::after { content: "•"; position: absolute; bottom: 2px; right: 4px; color: var(--accent); font-size: 18px; }
+
+    .todo-item { display: flex; align-items: center; gap: 10px; padding: 10px; background: rgba(255,255,255,.05); border-radius: 8px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,.1); }
+    .todo-checkbox { width: 18px; height: 18px; cursor: pointer; }
+
+    .calculator { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 300px; margin: 0 auto; }
+    .calc-display { grid-column: 1 / -1; height: 60px; background: rgba(255,255,255,.1); border-radius: 8px; padding: 10px; font-size: 24px; text-align: right; border: 1px solid rgba(255,255,255,.2); margin-bottom: 10px; }
+    .calc-btn { height: 50px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; font-size: 18px; cursor: pointer; color: var(--ink); }
+    .calc-btn:active { background: rgba(255,255,255,.2); }
+    .calc-btn.operator { background: rgba(124, 255, 203, 0.2); }
+
+    .checkin-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; }
+    .checkin-column { background: rgba(255,255,255,.05); border-radius: 10px; padding: 15px; border: 1px solid rgba(255,255,255,.1); }
+    .checkin-header { font-weight: bold; text-align: center; margin-bottom: 15px; color: var(--accent); border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 8px; }
+    .checkin-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: rgba(255,255,255,.03); border-radius: 6px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,.05); }
+    .status-btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); cursor: pointer; transition: all 0.2s; }
+    .status-btn.out { background: var(--status-out); }
+    .status-btn.in { background: var(--status-in); }
+    .status-btn.done { background: var(--status-done); }
+    .status-btn.hold { background: var(--status-hold); }
+    .status-btn.free { background: var(--status-free); }
+
+    .grid { display: grid; gap: 10px; }
+    .card {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+    }
+    .label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      margin-bottom: 6px;
+    }
+    input, select, textarea {
+      width: 100%;
+      background: rgba(255,255,255,.08);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 16px;
+      outline: none;
+      margin-bottom: 8px;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row > * { flex: 1; }
+    .pill {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.14);
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-size: 14px;
+    }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px 0; }
+    .tab {
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .tab.active {
+      background: linear-gradient(180deg, var(--accent), var(--accent-2));
+      color: #08121a;
+      border-color: transparent;
+    }
+
+    .rail {
+      position: relative;
+      height: 100%;
+      width: 72px;
+      margin-left: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .r-tab {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0a0e19;
+      font-weight: 900;
+      text-transform: uppercase;
+      border-radius: 14px 0 0 14px;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      border: 2px solid rgba(0,0,0,.15);
+      user-select: none;
+    }
+    .t1 { background: linear-gradient(180deg, var(--tab-1), #ff9b9b); }
+    .t2 { background: linear-gradient(180deg, var(--tab-2), #ffe28e); }
+    .t3 { background: linear-gradient(180deg, var(--tab-3), #50f5c5); }
+    .t4 { background: linear-gradient(180deg, var(--tab-4), #5cc0de); }
+    .t5 { background: linear-gradient(180deg, var(--tab-5), #ff7894); }
+    .t6 { background: linear-gradient(180deg, var(--tab-6), #caa9ff); }
+    .t7 { background: linear-gradient(180deg, var(--tab-7), #ff8ccd); }
+    .t8 { background: linear-gradient(180deg, var(--tab-8), #4fd7ff); }
+    .t9 { background: linear-gradient(180deg, var(--tab-9), #6affe4); }
+    .t10 { background: linear-gradient(180deg, var(--tab-10), #ffb347); }
+
+    /* housecheck */
+    .housecheck-day-tabs { display: flex; gap: 12px; justify-content: center; margin: 15px 0 10px; }
+    .day-tab { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); padding: 8px 22px; border-radius: 40px; cursor: pointer; font-weight: 700; }
+    .day-tab.active { background: linear-gradient(180deg, var(--accent), var(--accent-2)); color: #08121a; border-color: transparent; }
+    .estate { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; position: relative; }
+    .property {
+      width: 60px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: 0.1s ease;
+      color: white;
+      font-weight: bold;
+      font-size: 16px;
+      border: 1px solid rgba(255,255,255,.2);
+      box-shadow: 0 2px 6px rgba(0,0,0,.4);
+      position: relative;
+    }
+    .property.status-0 { background: var(--house-free); }
+    .property.status-1 { background: var(--house-out); }
+    .property.status-2 { background: var(--house-in); }
+    .property.status-3 { background: var(--house-co); }
+    .property.status-4 { background: var(--house-hold); }
+    .property.status-5 { background: var(--house-done); }
+    .property.status-6 { background: var(--house-inactive); color: transparent; }
+    .property.next-s::after, .property.next-m::after {
+      content: "S";
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: var(--accent);
+      color: #000;
+      font-size: 10px;
+      font-weight: bold;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid white;
+    }
+    .property.next-m::after { content: "M"; background: var(--accent-2); }
+
+    .btn-sm {
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.16);
+      color: var(--ink);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .right { margin-left: auto; }
+    footer {
+      padding: 8px 14px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .pda-message {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: var(--accent);
+      color: #000;
+      padding: 12px 18px;
+      border-radius: 8px;
+      z-index: 1001;
+      font-weight: bold;
+      box-shadow: var(--shadow);
+      animation: slideIn 0.3s ease;
+    }
+
+    .entries-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 12px;
+      border-top: 1px solid rgba(255,255,255,.1);
+      padding-top: 10px;
+    }
+    .entry-item {
+      background: rgba(255,255,255,.05);
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .entry-meta { font-size: 11px; color: var(--muted); }
+
+    .invoice-material-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: rgba(255,255,255,.03);
+      padding: 5px;
+      border-radius: 6px;
+      margin: 4px 0;
+    }
+    .invoice-material-row button {
+      background: none;
+      border: none;
+      color: #ff6b6b;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    /* file storage specific */
+    .file-status-bar {
+      display: flex;
+      justify-content: space-between;
+      background: rgba(0,0,0,.2);
+      padding: 8px 12px;
+      border-radius: 40px;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    .file-indicator { font-weight: 600; color: var(--accent); }
+    .size-indicator { font-family: monospace; }
+    .warning {
+      background: #fff3cd;
+      border-radius: 12px;
+      padding: 10px;
+      color: #856404;
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    @media (max-width:900px) {
+      .book { grid-template-columns: 1fr 62px; }
+      .rail { width: 62px; }
+      .r-tab { font-size: 12px; }
+      .property { width: 45px; height: 32px; font-size: 13px; }
+    }
+    .status-filter-select {
+      background: rgba(255,255,255,.1);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 8px;
+      padding: 6px;
+      font-size: 14px;
+      min-width: 160px;
+    }
+    .file-input { display: none; }
+    button.outline {
+      background: transparent;
+      border: 1.5px solid var(--accent);
+      color: var(--accent);
+    }
+    .event-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      background: rgba(255,255,255,.03);
+      border-radius: 8px;
+      margin-bottom: 4px;
+    }
+    .delete-event-btn {
+      background: none;
+      border: none;
+      color: #ff6b6b;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 5px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="book">
+    <div class="page">
+      <header class="appbar">
+        <div class="title">PDA · MaySystems + file sync</div>
+        <div class="actions">
+          <button class="btn" id="btnPrev">Prev</button>
+          <button class="btn" id="btnNext">Next</button>
+          <button class="btn" id="btnToday">Today</button>
+          <button class="btn" id="btnExport">Export</button>
+          <button class="btn" id="btnImport">Import</button>
+        </div>
+      </header>
+      <div class="content" id="content">
+        <!-- Calendar view -->
+        <section class="view active" data-view="calendar">
+          <div class="tabs" id="calTabs">
+            <button class="tab active" data-cal="month">Month</button>
+            <button class="tab" data-cal="week">Week</button>
+            <button class="tab" data-cal="day">Day</button>
+          </div>
+          <div class="card">
+            <div class="row" style="justify-content:space-between;">
+              <button class="btn-sm" id="calPrev">◀</button>
+              <div class="pill" id="calLabel">Month YYYY</div>
+              <button class="btn-sm" id="calNext">▶</button>
+              <span class="right pill" id="calToday">Today</span>
+            </div>
+            <div id="calendarArea"></div>
+          </div>
+          <div class="card">
+            <div class="label">Events for <span id="selectedDateDisplay">today</span></div>
+            <div class="row">
+              <input type="text" id="eventDesc" placeholder="Event description">
+              <button class="btn-sm" id="addEvent">Add</button>
+            </div>
+            <div id="eventList" style="margin-top:10px; max-height:150px; overflow-y:auto;"></div>
+          </div>
+
+          <!-- FILE STORAGE CARD -->
+          <div class="card">
+            <div class="label">💾 Persistent file (auto‑save, no popups)</div>
+            <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+              <button id="pickFileBtn" class="btn-sm" style="flex:2;">📂 Select JSON file</button>
+              <button id="newFileBtn" class="btn-sm outline" style="flex:1;">➕ New</button>
+            </div>
+            <div class="file-status-bar">
+              <span class="file-indicator" id="fileNameDisplay">No file selected</span>
+              <span class="size-indicator" id="sizeDisplay">0 B</span>
+            </div>
+            <div id="permissionWarning" class="warning" style="display: none;">
+              ⚠️ Permission needed. Tap "Load" or "Save" to re‑grant access.
+            </div>
+            <div style="display: flex; gap: 8px; margin: 10px 0;">
+              <button id="loadBtn" class="btn-sm">↻ Load from file</button>
+              <button id="saveBtn" class="btn-sm">💾 Save now</button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 600;">⏱️ Auto‑save</span>
+              <label><input type="checkbox" id="autoSaveToggle" checked> Enabled</label>
+            </div>
+            <div class="slider-container">
+              <span>Interval:</span>
+              <input type="range" id="intervalSlider" min="1" max="30" value="5" step="1" style="flex:1;">
+              <span id="intervalValue">5 sec</span>
+            </div>
+            <div class="note" id="autoSaveStatus" style="font-size: 12px; margin-top: 8px;">⏳ Select a file to enable auto‑save</div>
+          </div>
+
+          <div class="card">
+            <div class="label">Data Management</div>
+            <div class="row">
+              <button class="btn-sm" id="exportAll">Export All JSON</button>
+              <button class="btn-sm" id="importData">Import JSON</button>
+              <input type="file" id="fileInput" class="file-input" accept=".json">
+            </div>
+          </div>
+        </section>
+
+        <!-- Diary -->
+        <section class="view" data-view="diary">
+          <div class="card">
+            <div class="label">Diary · New Entry</div>
+            <textarea id="diaryEntry" placeholder="Write your diary entry here..."></textarea>
+            <div class="row">
+              <button class="btn-sm" id="saveDiary">Save New Entry</button>
+              <button class="btn-sm" id="clearDiaryForm">Clear Form</button>
+            </div>
+            <div class="entries-list">
+              <div class="label">Past Entries</div>
+              <div id="diaryEntriesList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Notepad -->
+        <section class="view" data-view="notepad">
+          <div class="card">
+            <div class="label">Notepad · New Note</div>
+            <textarea id="notepadText" placeholder="Write your notes here..."></textarea>
+            <div class="row">
+              <button class="btn-sm" id="saveNotepad">Save New Note</button>
+              <button class="btn-sm" id="clearNotepadForm">Clear Form</button>
+            </div>
+            <div class="entries-list">
+              <div class="label">Saved Notes</div>
+              <div id="notepadEntriesList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Todo -->
+        <section class="view" data-view="todo">
+          <div class="card">
+            <div class="label">To‑Do List</div>
+            <div class="row">
+              <input type="text" id="todoInput" placeholder="Add a new task...">
+              <button class="btn-sm" id="addTodo">Add Task</button>
+            </div>
+            <div id="todoList" style="margin-top:15px"></div>
+          </div>
+        </section>
+
+        <!-- Calculator -->
+        <section class="view" data-view="calc">
+          <div class="card">
+            <div class="label">Calculator</div>
+            <div class="calculator">
+              <div class="calc-display" id="calcDisplay">0</div>
+              <button class="calc-btn" data-calc="clear">C</button>
+              <button class="calc-btn" data-calc="clear-entry">CE</button>
+              <button class="calc-btn" data-calc="backspace">⌫</button>
+              <button class="calc-btn operator" data-calc="/">/</button>
+              <button class="calc-btn" data-calc="7">7</button>
+              <button class="calc-btn" data-calc="8">8</button>
+              <button class="calc-btn" data-calc="9">9</button>
+              <button class="calc-btn operator" data-calc="*">×</button>
+              <button class="calc-btn" data-calc="4">4</button>
+              <button class="calc-btn" data-calc="5">5</button>
+              <button class="calc-btn" data-calc="6">6</button>
+              <button class="calc-btn operator" data-calc="-">-</button>
+              <button class="calc-btn" data-calc="1">1</button>
+              <button class="calc-btn" data-calc="2">2</button>
+              <button class="calc-btn" data-calc="3">3</button>
+              <button class="calc-btn operator" data-calc="+">+</button>
+              <button class="calc-btn" data-calc="0" style="grid-column:1/3">0</button>
+              <button class="calc-btn" data-calc=".">.</button>
+              <button class="calc-btn operator" data-calc="=">=</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Safety (Trevithick) -->
+        <section class="view" data-view="trev">
+          <div class="card">
+            <div class="label">✋ Safety Check</div>
+            <div class="row">
+              <input type="text" id="trevInput" placeholder="Add new item...">
+              <select id="trevCategory">
+                <option value="maintenance">✋ Safety Check</option>
+                <option value="housekeeping">Housekeeping</option>
+              </select>
+              <button class="btn-sm" id="addTrev">Add Item</button>
+            </div>
+            <div class="checkin-container">
+              <div class="checkin-column">
+                <div class="checkin-header">✋ Safety Check</div>
+                <div id="trevMaintenanceList"></div>
+              </div>
+              <div class="checkin-column">
+                <div class="checkin-header">Housekeeping</div>
+                <div id="trevHousekeepingList"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Temp (Tubor) -->
+        <section class="view" data-view="tubor">
+          <div class="card">
+            <div class="label">💧 Water & Meter</div>
+            <div class="row">
+              <input type="text" id="tuborInput" placeholder="Add new item...">
+              <select id="tuborCategory">
+                <option value="maintenance">🏘 Meter Reading</option>
+                <option value="housekeeping">💧 Water Temp</option>
+              </select>
+              <button class="btn-sm" id="addTubor">Add Item</button>
+            </div>
+            <div class="checkin-container">
+              <div class="checkin-column">
+                <div class="checkin-header">🏘 Meter Reading</div>
+                <div id="tuborMaintenanceList"></div>
+              </div>
+              <div class="checkin-column">
+                <div class="checkin-header">💧 Water Temp</div>
+                <div id="tuborHousekeepingList"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Meter (Strawberry) -->
+        <section class="view" data-view="straw">
+          <div class="card">
+            <div class="label">📊 Meter Reading</div>
+            <div class="row">
+              <input type="text" id="strawInput" placeholder="Add new item...">
+              <select id="strawCategory">
+                <option value="maintenance">Maintenance</option>
+                <option value="housekeeping">Meter Reading</option>
+              </select>
+              <button class="btn-sm" id="addStraw">Add Item</button>
+            </div>
+            <div class="checkin-container">
+              <div class="checkin-column">
+                <div class="checkin-header">Maintenance</div>
+                <div id="strawMaintenanceList"></div>
+              </div>
+              <div class="checkin-column">
+                <div class="checkin-header">Meter Reading</div>
+                <div id="strawHousekeepingList"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Invoice -->
+        <section class="view" data-view="invoice">
+          <div class="card">
+            <div class="label">INVOICE MANAGER</div>
+            <input type="text" id="invoiceCustomer" placeholder="Customer Name">
+            <div class="row">
+              <input type="text" id="invoiceLocation" placeholder="Property Location">
+              <input type="text" id="invoicePropertyNum" placeholder="Property Number">
+            </div>
+            <textarea id="invoiceJobDesc" placeholder="Job Description (full details)"></textarea>
+            <div class="label">Materials Database</div>
+            <div class="row">
+              <input type="text" id="materialName" placeholder="Material name">
+              <input type="number" id="materialCost" placeholder="Cost (£)" step="0.01">
+              <button class="btn-sm" id="addMaterialToDB">+ Add to DB</button>
+            </div>
+            <select id="materialSelect"><option value="">-- Select from database --</option></select>
+            <button class="btn-sm" id="addSelectedMaterial">Add selected to invoice</button>
+            <div class="label">Materials on this invoice</div>
+            <div id="invoiceMaterialsList"></div>
+            <div class="row">
+              <input type="number" id="labourHours" placeholder="Labour Hours" step="0.5" value="0">
+              <input type="number" id="labourRate" placeholder="Rate (£/h)" step="0.5" value="25">
+            </div>
+            <div class="row">
+              <span>Total Materials: £<span id="totalMaterials">0.00</span></span>
+              <span>Total Labour: £<span id="totalLabour">0.00</span></span>
+              <span><strong>Invoice Total: £<span id="invoiceTotal">0.00</span></strong></span>
+            </div>
+            <div class="row">
+              <button class="btn-sm" id="saveInvoice">💾 Save Invoice</button>
+              <button class="btn-sm" id="clearInvoiceForm">🗑 Clear Form</button>
+            </div>
+            <div class="entries-list">
+              <div class="label">Saved Invoices</div>
+              <div id="invoiceEntriesList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MaySystems (housecheck) -->
+        <section class="view" data-view="housecheck">
+          <div class="card">
+            <div class="label">🏠 MaySystems · Fri / Sat / Mon 
+              <button class="btn-sm" id="lockHouseBtn" style="margin-left:10px;">🔓 Unlocked</button>
+            </div>
+            <div class="row" style="justify-content:space-between;">
+              <div>
+                <input type="time" id="houseCountdownTime" style="width:120px;">
+                <button class="btn-sm" id="startHouseCountdown">Start Timer</button>
+              </div>
+              <div>
+                <span class="pill">📋 Report filter:</span>
+                <select id="reportStatusFilter" multiple class="status-filter-select">
+                  <option value="0" selected>🟢 Free</option>
+                  <option value="1" selected>🔵 Out</option>
+                  <option value="2" selected>🟡 In</option>
+                  <option value="3" selected>🟣 C/O</option>
+                  <option value="4" selected>🔴 Hold</option>
+                  <option value="5" selected>🟠 Done</option>
+                </select>
+              </div>
+              <select id="houseStatusFilter">
+                <option value="All">All</option><option value="Free">Free</option><option value="Out">Out</option><option value="In">In</option>
+                <option value="C/O">C/O</option><option value="Hold">Hold</option><option value="Done">Done</option><option value="Inactive">Inactive</option>
+              </select>
+              <button class="btn-sm" id="copyHouseReport">📋 Copy</button>
+              <button class="btn-sm" id="whatsappHouseReport">📱 WhatsApp</button>
+            </div>
+            <div id="houseCountdownDisplay">Time left: --:--:--</div>
+            <div class="housecheck-day-tabs">
+              <span class="day-tab active" data-day="fri">Friday</span>
+              <span class="day-tab" data-day="sat">Saturday</span>
+              <span class="day-tab" data-day="mon">Monday</span>
+            </div>
+            <div id="houseSummary" class="pill" style="justify-content:center; font-size:14px;"></div>
+            <div><strong>Tudor Court (1–41)</strong><div class="estate" id="houseTudor"></div></div>
+            <div><strong>Trevithick Court (1–71)</strong><div class="estate" id="houseTrevithick"></div></div>
+            <div><strong>Strawberry Hill (1–10)</strong><div class="estate" id="houseStrawberry"></div></div>
+            <div>
+              <div class="label">📝 Daily Notes (timestamped, editable)</div>
+              <div class="row">
+                <input type="text" id="houseNoteInput" placeholder="Type a note...">
+                <button class="btn-sm" id="addHouseNote">Add</button>
+              </div>
+              <ul id="houseNotesList" style="list-style:none; padding-left:0; max-height:150px; overflow-y:auto;"></ul>
+            </div>
+          </div>
+        </section>
+      </div>
+      <footer>PDA full + MaySystems · persistent file (no popups)</footer>
+    </div>
+    <div class="rail" id="rail">
+      <div class="r-tab t1" data-target="calendar">Calendar</div>
+      <div class="r-tab t2" data-target="diary">Diary</div>
+      <div class="r-tab t3" data-target="notepad">Notepad</div>
+      <div class="r-tab t4" data-target="todo">To‑Do</div>
+      <div class="r-tab t5" data-target="calc">Calc</div>
+      <div class="r-tab t6" data-target="trev">Safety</div>
+      <div class="r-tab t7" data-target="tubor">Temp</div>
+      <div class="r-tab t8" data-target="straw">Meter</div>
+      <div class="r-tab t9" data-target="invoice">Invoice</div>
+      <div class="r-tab t10" data-target="housecheck">MaySystems</div>
+    </div>
+  </div>
+</div>
+<script>
+  (function(){
+    "use strict";
+
+    // ---------- PDA APPLICATION (robust) ----------
+    class PDApp {
+      constructor() {
+        this.currentView = 0; 
+        this.calendarDate = new Date(); 
+        this.calendarMode = 'month';
+        this.selectedDateStr = new Date().toISOString().split('T')[0];
+        this.calcValue = '0'; this.calcWaitingForOperand = false; this.calcOperator = null; this.calcOperand = 0;
+        this.statusOrder = ['out','in','done','hold','free'];
+        this.houseStatusNames = ["🟢Free","🔵Out","🟡In","🟣C/O","🔴Hold","🟠Done","⚪Inactive"];
+        this.houseDays = ['fri','sat','mon']; this.houseCurrentDay = 'fri'; this.houseCountdownInterval = null;
+        this.houseLocked = false;
+        this.init();
+      }
+      $(s) { return document.querySelector(s); }
+      $$(s) { return Array.from(document.querySelectorAll(s)); }
+
+      init() {
+        this.setupDOM();
+        this.setupEventListeners();
+        this.safeCall(() => this.renderCalendar(), 'renderCalendar');
+        this.safeCall(() => this.renderTodoList(), 'renderTodoList');
+        this.safeCall(() => this.renderAllCheckinLists(), 'renderAllCheckinLists');
+        this.safeCall(() => this.loadDiaryEntries(), 'loadDiaryEntries');
+        this.safeCall(() => this.loadNotepadEntries(), 'loadNotepadEntries');
+        this.safeCall(() => this.loadCalendarEvents(), 'loadCalendarEvents');
+        this.safeCall(() => this.initHousecheck(), 'initHousecheck');
+        this.safeCall(() => this.loadInvoices(), 'loadInvoices');
+        this.safeCall(() => this.loadMaterialDB(), 'loadMaterialDB');
+        this.showMessage('PDA + file sync ready');
+      }
+      safeCall(fn, name) { try { fn.call(this); } catch(e) { console.error('Error in', name, e); this.showMessage('⚠️ Error in ' + name); } }
+
+      setupDOM() { this.views = this.$$('.view'); this.viewOrder = this.views.map(v => v.dataset.view); }
+      showView(viewName) { 
+        const idx = this.viewOrder.indexOf(viewName); if(idx===-1) return; 
+        this.currentView = idx; 
+        this.views.forEach(v=>v.classList.remove('active')); 
+        this.views[idx].classList.add('active'); 
+        if(viewName==='housecheck') this.renderHousecheck(); 
+        if(viewName==='calendar') { this.renderCalendar(); this.updateSelectedDateDisplay(); }
+        if(viewName==='invoice') this.refreshInvoiceUI(); 
+      }
+      nextView() { this.showView(this.viewOrder[(this.currentView+1)%this.viewOrder.length]); }
+      prevView() { this.showView(this.viewOrder[(this.currentView-1+this.viewOrder.length)%this.viewOrder.length]); }
+      showMessage(t, d=3000) { let m = this.$('.pda-message'); if(m) m.remove(); m = document.createElement('div'); m.className='pda-message'; m.textContent=t; document.body.appendChild(m); setTimeout(()=>{if(m.parentNode) m.remove()}, d); }
+
+      // Diary
+      loadDiaryEntries() { let entries = JSON.parse(localStorage.getItem('pda_diary_entries')||'[]'); this.renderDiaryList(entries); }
+      renderDiaryList(entries) { const container = this.$('#diaryEntriesList'); if(!container) return; if(entries.length===0){ container.innerHTML='<div class="entry-item">No entries</div>'; return; }
+        container.innerHTML = entries.map((e,i)=>`<div class="entry-item"><span style="flex:3"><strong>${e.timestamp}</strong><br>${e.text.substring(0,60)}</span><div><button class="btn-sm load-diary" data-idx="${i}">Load</button><button class="btn-sm delete-diary" data-idx="${i}" style="margin-left:5px;">Delete</button></div></div>`).join('');
+        this.$$('.load-diary').forEach(btn=>btn.addEventListener('click',()=>{ let idx=btn.dataset.idx; let entries=JSON.parse(localStorage.getItem('pda_diary_entries')||'[]'); const ta = this.$('#diaryEntry'); if(ta) ta.value=entries[idx].text; this.showMessage('Entry loaded to editor'); }));
+        this.$$('.delete-diary').forEach(btn=>btn.addEventListener('click',()=>{ if(confirm('Delete this diary entry?')){ let idx=btn.dataset.idx; let entries=JSON.parse(localStorage.getItem('pda_diary_entries')||'[]'); entries.splice(idx,1); localStorage.setItem('pda_diary_entries',JSON.stringify(entries)); this.loadDiaryEntries(); this.showMessage('Entry deleted'); }}));
+      }
+      saveDiaryEntry() { const ta = this.$('#diaryEntry'); if(!ta) return; let text = ta.value.trim(); if(!text) return this.showMessage('Write something first'); let entries = JSON.parse(localStorage.getItem('pda_diary_entries')||'[]'); entries.unshift({ timestamp: new Date().toLocaleString(), text }); localStorage.setItem('pda_diary_entries',JSON.stringify(entries)); ta.value=''; this.loadDiaryEntries(); this.showMessage('Diary entry saved'); if(window.fileStorage) fileStorage.markDirty(); }
+
+      // Notepad
+      loadNotepadEntries() { let notes = JSON.parse(localStorage.getItem('pda_notepad_entries')||'[]'); this.renderNotepadList(notes); }
+      renderNotepadList(notes) { const c=this.$('#notepadEntriesList'); if(!c) return; if(notes.length===0){ c.innerHTML='<div class="entry-item">No notes</div>'; return; }
+        c.innerHTML = notes.map((n,i)=>`<div class="entry-item"><span style="flex:3"><strong>${n.timestamp}</strong><br>${n.text.substring(0,60)}</span><div><button class="btn-sm load-note" data-idx="${i}">Load</button><button class="btn-sm delete-note" data-idx="${i}" style="margin-left:5px;">Delete</button></div></div>`).join('');
+        this.$$('.load-note').forEach(btn=>btn.addEventListener('click',()=>{ let idx=btn.dataset.idx; let notes=JSON.parse(localStorage.getItem('pda_notepad_entries')||'[]'); const ta = this.$('#notepadText'); if(ta) ta.value=notes[idx].text; this.showMessage('Note loaded'); }));
+        this.$$('.delete-note').forEach(btn=>btn.addEventListener('click',()=>{ if(confirm('Delete this note?')){ let idx=btn.dataset.idx; let notes=JSON.parse(localStorage.getItem('pda_notepad_entries')||'[]'); notes.splice(idx,1); localStorage.setItem('pda_notepad_entries',JSON.stringify(notes)); this.loadNotepadEntries(); this.showMessage('Note deleted'); }}));
+      }
+      saveNotepadEntry() { const ta = this.$('#notepadText'); if(!ta) return; let text = ta.value.trim(); if(!text) return; let notes = JSON.parse(localStorage.getItem('pda_notepad_entries')||'[]'); notes.unshift({ timestamp: new Date().toLocaleString(), text }); localStorage.setItem('pda_notepad_entries',JSON.stringify(notes)); ta.value=''; this.loadNotepadEntries(); this.showMessage('Note saved'); if(window.fileStorage) fileStorage.markDirty(); }
+
+      // Invoice module (unchanged)
+      loadMaterialDB() { let db = JSON.parse(localStorage.getItem('invoice_materials_db')||'[]'); const sel = this.$('#materialSelect'); if(!sel) return; sel.innerHTML='<option value="">-- Select from database --</option>'+db.map(m=>`<option value="${m.name}|${m.cost}">${m.name} (£${m.cost})</option>`).join(''); }
+      addMaterialToDB() { let name=this.$('#materialName')?.value.trim(); let cost=parseFloat(this.$('#materialCost')?.value); if(!name||isNaN(cost)) return; let db=JSON.parse(localStorage.getItem('invoice_materials_db')||'[]'); db.push({name,cost}); localStorage.setItem('invoice_materials_db',JSON.stringify(db)); this.$('#materialName').value=''; this.$('#materialCost').value=''; this.loadMaterialDB(); this.showMessage('Material added to DB'); if(window.fileStorage) fileStorage.markDirty(); }
+      addSelectedMaterialToInvoice() { let val=this.$('#materialSelect')?.value; if(!val) return; let [name,cost]=val.split('|'); cost=parseFloat(cost); let mats=JSON.parse(sessionStorage.getItem('temp_invoice_materials')||'[]'); mats.push({name,cost}); sessionStorage.setItem('temp_invoice_materials',JSON.stringify(mats)); this.refreshInvoiceUI(); }
+      removeMaterialFromInvoice(idx) { let mats=JSON.parse(sessionStorage.getItem('temp_invoice_materials')||'[]'); mats.splice(idx,1); sessionStorage.setItem('temp_invoice_materials',JSON.stringify(mats)); this.refreshInvoiceUI(); }
+      refreshInvoiceUI() { let mats=JSON.parse(sessionStorage.getItem('temp_invoice_materials')||'[]'); let container=this.$('#invoiceMaterialsList'); if(container) container.innerHTML=mats.map((m,i)=>`<div class="invoice-material-row"><span>${m.name} £${m.cost.toFixed(2)}</span><button class="remove-material" data-idx="${i}">✖</button></div>`).join('')||'<i>No materials added</i>';
+        this.$$('.remove-material').forEach(btn=>btn.addEventListener('click',(e)=>{ let idx=btn.dataset.idx; this.removeMaterialFromInvoice(parseInt(idx)); }));
+        let totalMats=mats.reduce((s,m)=>s+m.cost,0); let hours=parseFloat(this.$('#labourHours')?.value)||0; let rate=parseFloat(this.$('#labourRate')?.value)||0; let labour=hours*rate; let total=totalMats+labour;
+        const tm = this.$('#totalMaterials'); if(tm) tm.innerText=totalMats.toFixed(2);
+        const tl = this.$('#totalLabour'); if(tl) tl.innerText=labour.toFixed(2);
+        const it = this.$('#invoiceTotal'); if(it) it.innerText=total.toFixed(2);
+      }
+      saveInvoice() { let customer=this.$('#invoiceCustomer')?.value.trim(); if(!customer) return this.showMessage('Customer name required'); let location=this.$('#invoiceLocation')?.value; let propNum=this.$('#invoicePropertyNum')?.value; let jobDesc=this.$('#invoiceJobDesc')?.value; let mats=JSON.parse(sessionStorage.getItem('temp_invoice_materials')||'[]'); let hours=parseFloat(this.$('#labourHours')?.value)||0; let rate=parseFloat(this.$('#labourRate')?.value)||0; let totalMats=mats.reduce((s,m)=>s+m.cost,0); let totalLabour=hours*rate; let invoiceTotal=totalMats+totalLabour; let invoice={ id:Date.now(), timestamp:new Date().toLocaleString(), customer, location, propNum, jobDesc, materials:mats, labourHours:hours, labourRate:rate, totalMats, totalLabour, invoiceTotal };
+        let invoices=JSON.parse(localStorage.getItem('pda_invoices')||'[]'); invoices.unshift(invoice); localStorage.setItem('pda_invoices',JSON.stringify(invoices)); sessionStorage.removeItem('temp_invoice_materials'); this.clearInvoiceForm(); this.loadInvoices(); this.showMessage('Invoice saved'); if(window.fileStorage) fileStorage.markDirty(); }
+      clearInvoiceForm() { const cus = this.$('#invoiceCustomer'); if(cus) cus.value=''; const loc = this.$('#invoiceLocation'); if(loc) loc.value=''; const pn = this.$('#invoicePropertyNum'); if(pn) pn.value=''; const jd = this.$('#invoiceJobDesc'); if(jd) jd.value=''; const lh = this.$('#labourHours'); if(lh) lh.value='0'; const lr = this.$('#labourRate'); if(lr) lr.value='25'; sessionStorage.removeItem('temp_invoice_materials'); this.refreshInvoiceUI(); }
+      loadInvoices() { let invs=JSON.parse(localStorage.getItem('pda_invoices')||'[]'); const c=this.$('#invoiceEntriesList'); if(!c) return; if(invs.length===0){ c.innerHTML='<div class="entry-item">No invoices</div>'; return; }
+        c.innerHTML=invs.map((inv,i)=>`<div class="entry-item"><span><strong>${inv.timestamp}</strong><br>${inv.customer} - Total: £${inv.invoiceTotal.toFixed(2)}</span><div><button class="btn-sm load-invoice" data-idx="${i}">Load</button><button class="btn-sm delete-invoice" data-idx="${i}">Delete</button></div></div>`).join('');
+        this.$$('.load-invoice').forEach(btn=>btn.addEventListener('click',()=>{ let idx=btn.dataset.idx; let inv=JSON.parse(localStorage.getItem('pda_invoices')||'[]')[idx]; if(inv){ const cus=this.$('#invoiceCustomer'); if(cus) cus.value=inv.customer; const loc=this.$('#invoiceLocation'); if(loc) loc.value=inv.location||''; const pn=this.$('#invoicePropertyNum'); if(pn) pn.value=inv.propNum||''; const jd=this.$('#invoiceJobDesc'); if(jd) jd.value=inv.jobDesc||''; const lh=this.$('#labourHours'); if(lh) lh.value=inv.labourHours; const lr=this.$('#labourRate'); if(lr) lr.value=inv.labourRate; sessionStorage.setItem('temp_invoice_materials',JSON.stringify(inv.materials||[])); this.refreshInvoiceUI(); this.showMessage('Invoice loaded'); } }));
+        this.$$('.delete-invoice').forEach(btn=>btn.addEventListener('click',()=>{ if(confirm('Delete this invoice permanently?')){ let idx=btn.dataset.idx; let invs=JSON.parse(localStorage.getItem('pda_invoices')||'[]'); invs.splice(idx,1); localStorage.setItem('pda_invoices',JSON.stringify(invs)); this.loadInvoices(); this.showMessage('Invoice deleted'); if(window.fileStorage) fileStorage.markDirty(); }}));
+      }
+
+      toggleHouseLock() { this.houseLocked = !this.houseLocked; const btn=this.$('#lockHouseBtn'); if(btn) btn.textContent = this.houseLocked ? '🔒 Locked' : '🔓 Unlocked'; this.showMessage(`Housecheck ${this.houseLocked?'locked':'unlocked'}`); }
+
+      // Calendar
+      getEvents(){ return JSON.parse(localStorage.getItem('pda_calendar_events')||'{}'); }
+      saveEvent(dateStr, desc) { let e = this.getEvents(); if(!e[dateStr]) e[dateStr]=[]; e[dateStr].push(desc); localStorage.setItem('pda_calendar_events',JSON.stringify(e)); this.renderCalendar(); this.updateSelectedDateDisplay(); if(window.fileStorage) fileStorage.markDirty(); }
+      deleteEvent(dateStr, index) { let e = this.getEvents(); if(e[dateStr]) { e[dateStr].splice(index,1); if(e[dateStr].length===0) delete e[dateStr]; localStorage.setItem('pda_calendar_events',JSON.stringify(e)); this.renderCalendar(); this.updateSelectedDateDisplay(); if(window.fileStorage) fileStorage.markDirty(); } }
+      renderCalendar() { this.renderMonthView(); this.updateSelectedDateDisplay(); }
+      renderMonthView() { let year=this.calendarDate.getFullYear(), month=this.calendarDate.getMonth(); let today=new Date(); const calLabel = this.$('#calLabel'); if(calLabel) calLabel.innerHTML=this.calendarDate.toLocaleDateString('en-US',{month:'long',year:'numeric'}); let html='<div class="calendar-grid">';['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d=>html+=`<div class="calendar-header">${d}</div>`); let daysInMonth=new Date(year,month+1,0).getDate(), firstDay=new Date(year,month,1).getDay(); for(let i=0;i<firstDay;i++) html+='<div class="calendar-day other-month"></div>'; let events=this.getEvents(); for(let d=1;d<=daysInMonth;d++){ let dateStr=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; let hasEvent=events[dateStr]?.length>0; let isToday=today.getDate()===d && today.getMonth()===month && today.getFullYear()===year; let isSelected = (dateStr === this.selectedDateStr); html+=`<div class="calendar-day ${isToday?'today':''} ${hasEvent?'has-event':''} ${isSelected?'selected':''}" data-date="${dateStr}">${d}</div>`; } html+='</div>'; const area = this.$('#calendarArea'); if(area) area.innerHTML=html; }
+      updateSelectedDateDisplay() {
+        const disp = this.$('#selectedDateDisplay');
+        if(disp) disp.textContent = this.selectedDateStr;
+        this.displayEventsForDate(this.selectedDateStr);
+      }
+      displayEventsForDate(dateStr) {
+        const events = this.getEvents()[dateStr] || [];
+        const container = this.$('#eventList');
+        if(!container) return;
+        if(events.length===0) { container.innerHTML = '<div class="event-item">No events for this date</div>'; return; }
+        container.innerHTML = events.map((ev, i) => `
+          <div class="event-item">
+            <span>${ev}</span>
+            <button class="delete-event-btn" data-date="${dateStr}" data-index="${i}">🗑️</button>
+          </div>
+        `).join('');
+        container.querySelectorAll('.delete-event-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const date = btn.dataset.date;
+            const idx = parseInt(btn.dataset.index);
+            this.deleteEvent(date, idx);
+          });
+        });
+      }
+      loadCalendarEvents() { this.updateSelectedDateDisplay(); }
+
+      addTodo(){ const inp = this.$('#todoInput'); if(!inp) return; let txt=inp.value.trim(); if(!txt)return; let todos=JSON.parse(localStorage.getItem('pda_todos')||'[]'); todos.push({text:txt,completed:false,id:Date.now()}); localStorage.setItem('pda_todos',JSON.stringify(todos)); inp.value=''; this.renderTodoList(); if(window.fileStorage) fileStorage.markDirty(); }
+      renderTodoList(){ let todos=JSON.parse(localStorage.getItem('pda_todos')||'[]'); const list = this.$('#todoList'); if(!list) return; let html=''; todos.forEach(t=>{ html+=`<div class="todo-item"><input type="checkbox" class="todo-checkbox" ${t.completed?'checked':''} data-id="${t.id}"><span>${t.text}</span><button class="btn-sm right delete-todo" data-id="${t.id}">Delete</button></div>`; }); list.innerHTML=html||'<p>No tasks yet.</p>'; }
+      toggleTodo(id){ let todos=JSON.parse(localStorage.getItem('pda_todos')||'[]'); let todo=todos.find(t=>t.id==id); if(todo){ todo.completed=!todo.completed; localStorage.setItem('pda_todos',JSON.stringify(todos)); this.renderTodoList(); if(window.fileStorage) fileStorage.markDirty(); } }
+      deleteTodo(id){ if(confirm('Delete this task?')){ let todos=JSON.parse(localStorage.getItem('pda_todos')||'[]'); todos=todos.filter(t=>t.id!=id); localStorage.setItem('pda_todos',JSON.stringify(todos)); this.renderTodoList(); if(window.fileStorage) fileStorage.markDirty(); } }
+
+      addCheckinItem(t){ let input=this.$(`#${t}Input`), sel=this.$(`#${t}Category`); let txt=input?.value.trim(); if(!txt)return; let items=JSON.parse(localStorage.getItem(`pda_${t}_items`)||'{}'); let cat=sel.value; if(!items[cat])items[cat]=[]; items[cat].push({text:txt,status:'out',id:Date.now()+Math.random()}); localStorage.setItem(`pda_${t}_items`,JSON.stringify(items)); input.value=''; this.renderCheckinList(t); if(window.fileStorage) fileStorage.markDirty(); }
+      renderAllCheckinLists(){ ['trev','tubor','straw'].forEach(t=>this.renderCheckinList(t)); }
+      renderCheckinList(t){ let items=JSON.parse(localStorage.getItem(`pda_${t}_items`)||'{}'); ['maintenance','housekeeping'].forEach(cat=>{ let cont=this.$(`#${t}${cat.charAt(0).toUpperCase()+cat.slice(1)}List`); if(!cont) return; let html=''; if(items[cat]) items[cat].forEach(i=>{ html+=`<div class="checkin-item"><span style="flex:1">${i.text}</span><div class="status-btn ${i.status}" data-id="${i.id}" data-list="${t}" data-category="${cat}"></div><button class="btn-sm delete-checkin" data-id="${i.id}" data-list="${t}" data-category="${cat}">Delete</button></div>`; }); cont.innerHTML=html||'<p>No items yet</p>'; }); }
+      cycleCheckinStatus(l,c,id){ let items=JSON.parse(localStorage.getItem(`pda_${l}_items`)||'{}'); let item=items[c]?.find(x=>x.id==id); if(item){ let idx=this.statusOrder.indexOf(item.status); let nxt=(idx+1)%this.statusOrder.length; item.status=this.statusOrder[nxt]; localStorage.setItem(`pda_${l}_items`,JSON.stringify(items)); this.renderCheckinList(l); if(window.fileStorage) fileStorage.markDirty(); } }
+      deleteCheckinItem(l,c,id){ if(confirm('Delete this item?')){ let items=JSON.parse(localStorage.getItem(`pda_${l}_items`)||'{}'); if(items[c]){ items[c]=items[c].filter(x=>x.id!=id); localStorage.setItem(`pda_${l}_items`,JSON.stringify(items)); this.renderCheckinList(l); if(window.fileStorage) fileStorage.markDirty(); } } }
+
+      initHousecheck(){ this.renderHousecheck(); this.loadHouseNotes(); }
+      renderHousecheck(){ this.renderHouseGrid('tudor',1,41); this.renderHouseGrid('trevithick',1,71); this.renderHouseGrid('strawberry',1,10); this.updateHouseSummary(); }
+      renderHouseGrid(zone,start,end){ let cont=this.$(`#house${zone.charAt(0).toUpperCase()+zone.slice(1)}`); if(!cont)return; let html=''; for(let i=start;i<=end;i++){ let key=`house_${this.houseCurrentDay}_${zone}-${i}`; let status=localStorage.getItem(key); if(status===null||isNaN(parseInt(status))){status='0'; localStorage.setItem(key,'0');} let nextIndicator=''; if(this.houseCurrentDay==='fri'){ let nk=`house_sat_${zone}-${i}`; let ns=localStorage.getItem(nk); if(ns&&ns!=='0'&&ns!=='6') nextIndicator='next-s'; } else if(this.houseCurrentDay==='sat'){ let nk=`house_mon_${zone}-${i}`; let ns=localStorage.getItem(nk); if(ns&&ns!=='0'&&ns!=='6') nextIndicator='next-m'; } html+=`<div class="property status-${status} ${nextIndicator}" data-zone="${zone}" data-number="${i}" data-day="${this.houseCurrentDay}" data-status="${status}">${i}</div>`; } cont.innerHTML=html; if(!this.houseLocked) cont.querySelectorAll('.property').forEach(prop=>prop.addEventListener('click',()=>this.cycleHouseStatus(prop))); else cont.querySelectorAll('.property').forEach(prop=>prop.style.cursor='not-allowed'); }
+      cycleHouseStatus(el){ if(this.houseLocked){ this.showMessage('Housecheck is locked. Unlock to edit.'); return; } let curr=parseInt(el.dataset.status); if(isNaN(curr)||curr<0||curr>6)curr=0; let next=(curr+1)%7; let key=`house_${el.dataset.day}_${el.dataset.zone}-${el.dataset.number}`; localStorage.setItem(key,next.toString()); this.renderHousecheck(); if(window.fileStorage) fileStorage.markDirty(); }
+      updateHouseSummary(){ let props=this.$$(`#houseTudor .property, #houseTrevithick .property, #houseStrawberry .property`); let counts=[0,0,0,0,0,0]; props.forEach(p=>{ let s=parseInt(p.dataset.status); if(!isNaN(s)&&s>=0&&s<6) counts[s]++; }); const summary = this.$('#houseSummary'); if(summary) summary.innerHTML=`🟢Free:${counts[0]} 🔵Out:${counts[1]} 🟡In:${counts[2]} 🟣C/O:${counts[3]} 🔴Hold:${counts[4]} 🟠Done:${counts[5]}`; }
+      addHouseNote(){ const inp = this.$('#houseNoteInput'); if(!inp) return; let txt=inp.value.trim(); if(!txt)return; let notes=JSON.parse(localStorage.getItem('MaySystems_notes')||'[]'); notes.push({timestamp:new Date().toLocaleString(), text:txt}); localStorage.setItem('MaySystems_notes',JSON.stringify(notes)); inp.value=''; this.loadHouseNotes(); if(window.fileStorage) fileStorage.markDirty(); }
+      loadHouseNotes(){ let notes=JSON.parse(localStorage.getItem('MaySystems_notes')||'[]'); let ul=this.$('#houseNotesList'); if(!ul) return; ul.innerHTML=''; notes.forEach((n,i)=>{ let li=document.createElement('li'); li.style.marginBottom='8px'; li.style.background='rgba(255,255,255,.05)'; li.style.padding='6px'; li.style.borderRadius='6px'; let strong=document.createElement('strong'); strong.textContent=n.timestamp+': '; strong.style.fontSize='11px'; li.appendChild(strong); let span=document.createElement('span'); span.textContent=n.text; li.appendChild(span); let btnLoad=document.createElement('button'); btnLoad.textContent='Load'; btnLoad.className='btn-sm'; btnLoad.style.marginLeft='10px'; btnLoad.onclick=()=>{ const inp = this.$('#houseNoteInput'); if(inp) inp.value=n.text; this.showMessage('Note loaded into editor'); }; let btnDel=document.createElement('button'); btnDel.textContent='Delete'; btnDel.className='btn-sm'; btnDel.style.marginLeft='5px'; btnDel.onclick=()=>{ if(confirm('Delete this note?')){ notes.splice(i,1); localStorage.setItem('MaySystems_notes',JSON.stringify(notes)); this.loadHouseNotes(); this.showMessage('Note deleted'); if(window.fileStorage) fileStorage.markDirty(); } }; li.appendChild(btnLoad); li.appendChild(btnDel); ul.appendChild(li); }); }
+
+      exportAllData(){ let data = { todos:JSON.parse(localStorage.getItem('pda_todos')||'[]'), diaryEntries:JSON.parse(localStorage.getItem('pda_diary_entries')||'[]'), notepadEntries:JSON.parse(localStorage.getItem('pda_notepad_entries')||'[]'), trevithick:JSON.parse(localStorage.getItem('pda_trev_items')||'{}'), tubor:JSON.parse(localStorage.getItem('pda_tubor_items')||'{}'), strawberry:JSON.parse(localStorage.getItem('pda_straw_items')||'{}'), calendarEvents:JSON.parse(localStorage.getItem('pda_calendar_events')||'{}'), invoices:JSON.parse(localStorage.getItem('pda_invoices')||'[]'), materialsDB:JSON.parse(localStorage.getItem('invoice_materials_db')||'[]'), housecheck:{}, houseNotes:JSON.parse(localStorage.getItem('MaySystems_notes')||'[]') }; ['fri','sat','mon'].forEach(day=>{ data.housecheck[day]={tudor:{},trevithick:{},strawberry:{}}; for(let i=1;i<=41;i++) data.housecheck[day].tudor[i]=localStorage.getItem(`house_${day}_tudor-${i}`)||'0'; for(let i=1;i<=71;i++) data.housecheck[day].trevithick[i]=localStorage.getItem(`house_${day}_trevithick-${i}`)||'0'; for(let i=1;i<=10;i++) data.housecheck[day].strawberry[i]=localStorage.getItem(`house_${day}_strawberry-${i}`)||'0'; }); return data; }
+
+      importDataObject(obj){ try{ if(obj.todos) localStorage.setItem('pda_todos',JSON.stringify(obj.todos)); if(obj.diaryEntries) localStorage.setItem('pda_diary_entries',JSON.stringify(obj.diaryEntries)); if(obj.notepadEntries) localStorage.setItem('pda_notepad_entries',JSON.stringify(obj.notepadEntries)); if(obj.trevithick) localStorage.setItem('pda_trev_items',JSON.stringify(obj.trevithick)); if(obj.tubor) localStorage.setItem('pda_tubor_items',JSON.stringify(obj.tubor)); if(obj.strawberry) localStorage.setItem('pda_straw_items',JSON.stringify(obj.strawberry)); if(obj.calendarEvents) localStorage.setItem('pda_calendar_events',JSON.stringify(obj.calendarEvents)); if(obj.invoices) localStorage.setItem('pda_invoices',JSON.stringify(obj.invoices)); if(obj.materialsDB) localStorage.setItem('invoice_materials_db',JSON.stringify(obj.materialsDB)); if(obj.houseNotes) localStorage.setItem('MaySystems_notes',JSON.stringify(obj.houseNotes)); if(obj.housecheck) for(let day in obj.housecheck) for(let zone in obj.housecheck[day]) for(let num in obj.housecheck[day][zone]) localStorage.setItem(`house_${day}_${zone}-${num}`, obj.housecheck[day][zone][num]); this.showMessage('Data imported'); location.reload(); }catch(e){this.showMessage('Import error');} }
+
+      setupEventListeners() {
+        // Navigation
+        const btnPrev = this.$('#btnPrev'); if(btnPrev) btnPrev.onclick=()=>this.prevView();
+        const btnNext = this.$('#btnNext'); if(btnNext) btnNext.onclick=()=>this.nextView();
+        const btnToday = this.$('#btnToday'); if(btnToday) btnToday.onclick=()=>{this.calendarDate=new Date(); this.renderCalendar(); this.showView('calendar');};
+        this.$$('#rail .r-tab').forEach(t=>t.onclick=()=>this.showView(t.dataset.target));
+
+        // Calendar
+        const calPrev = this.$('#calPrev'); if(calPrev) calPrev.onclick=()=>{this.calendarDate.setMonth(this.calendarDate.getMonth()-1); this.renderCalendar();};
+        const calNext = this.$('#calNext'); if(calNext) calNext.onclick=()=>{this.calendarDate.setMonth(this.calendarDate.getMonth()+1); this.renderCalendar();};
+        const calToday = this.$('#calToday'); if(calToday) calToday.onclick=()=>{this.calendarDate=new Date(); this.selectedDateStr = new Date().toISOString().split('T')[0]; this.renderCalendar();};
+        this.$$('#calTabs .tab').forEach((tab,idx)=>tab.onclick=()=>{this.$$('#calTabs .tab').forEach(t=>t.classList.remove('active')); tab.classList.add('active'); this.calendarMode=['month','week','day'][idx]; this.renderCalendar();});
+        const calendarArea = this.$('#calendarArea'); if(calendarArea) calendarArea.addEventListener('click',e=>{let d=e.target.closest('.calendar-day'); if(d?.dataset.date){ this.selectedDateStr = d.dataset.date; this.renderCalendar(); }});
+        const addEventBtn = this.$('#addEvent'); if(addEventBtn) addEventBtn.onclick=()=>{let d=this.$('#eventDesc').value.trim(); if(d) this.saveEvent(this.selectedDateStr, d); this.$('#eventDesc').value='';};
+
+        // Todo
+        const addTodoBtn = this.$('#addTodo'); if(addTodoBtn) addTodoBtn.onclick=()=>this.addTodo();
+        const todoList = this.$('#todoList'); if(todoList) todoList.addEventListener('click',e=>{if(e.target.classList.contains('todo-checkbox'))this.toggleTodo(e.target.dataset.id); if(e.target.classList.contains('delete-todo'))this.deleteTodo(e.target.dataset.id);});
+
+        // Calculator
+        this.$$('.calc-btn').forEach(b=>b.onclick=()=>{let v=b.dataset.calc; if(/[0-9]/.test(v))this.inputDigit(v); else if(v==='.')this.inputDecimal(); else if(v==='=')this.calculate(); else if(v==='clear')this.clearCalculator(); else if(v==='clear-entry')this.clearEntry(); else if(v==='backspace')this.backspace(); else this.handleOperator(v);});
+
+        // Checkin
+        const addTrev = this.$('#addTrev'); if(addTrev) addTrev.onclick=()=>this.addCheckinItem('trev');
+        const addTubor = this.$('#addTubor'); if(addTubor) addTubor.onclick=()=>this.addCheckinItem('tubor');
+        const addStraw = this.$('#addStraw'); if(addStraw) addStraw.onclick=()=>this.addCheckinItem('straw');
+        document.addEventListener('click',e=>{if(e.target.classList.contains('status-btn'))this.cycleCheckinStatus(e.target.dataset.list,e.target.dataset.category,e.target.dataset.id); if(e.target.classList.contains('delete-checkin'))this.deleteCheckinItem(e.target.dataset.list,e.target.dataset.category,e.target.dataset.id);});
+
+        // Diary & Notepad
+        const saveDiary = this.$('#saveDiary'); if(saveDiary) saveDiary.onclick=()=>this.saveDiaryEntry();
+        const clearDiary = this.$('#clearDiaryForm'); if(clearDiary) clearDiary.onclick=()=>{ const ta = this.$('#diaryEntry'); if(ta) ta.value=''; };
+        const saveNotepad = this.$('#saveNotepad'); if(saveNotepad) saveNotepad.onclick=()=>this.saveNotepadEntry();
+        const clearNotepad = this.$('#clearNotepadForm'); if(clearNotepad) clearNotepad.onclick=()=>{ const ta = this.$('#notepadText'); if(ta) ta.value=''; };
+
+        // Invoice
+        const addMatDb = this.$('#addMaterialToDB'); if(addMatDb) addMatDb.onclick=()=>this.addMaterialToDB();
+        const addSelMat = this.$('#addSelectedMaterial'); if(addSelMat) addSelMat.onclick=()=>this.addSelectedMaterialToInvoice();
+        const saveInv = this.$('#saveInvoice'); if(saveInv) saveInv.onclick=()=>this.saveInvoice();
+        const clearInv = this.$('#clearInvoiceForm'); if(clearInv) clearInv.onclick=()=>this.clearInvoiceForm();
+        const lh = this.$('#labourHours'); if(lh) lh.oninput=()=>this.refreshInvoiceUI();
+        const lr = this.$('#labourRate'); if(lr) lr.oninput=()=>this.refreshInvoiceUI();
+
+        // Export / Import
+        const exportAll = this.$('#exportAll'); if(exportAll) exportAll.onclick=()=>{ let data=this.exportAllData(); let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); let a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`pda-${new Date().toISOString().split('T')[0]}.json`; a.click(); };
+        const btnExport = this.$('#btnExport'); if(btnExport) btnExport.onclick=()=>this.$('#exportAll').click();
+        const importData = this.$('#importData'); if(importData) importData.onclick=()=>this.$('#fileInput').click();
+        const btnImport = this.$('#btnImport'); if(btnImport) btnImport.onclick=()=>this.$('#fileInput').click();
+        const fileInput = this.$('#fileInput'); if(fileInput) fileInput.onchange=e=>{if(e.target.files[0]&&confirm('Replace all data?')){ let reader=new FileReader(); reader.onload=ev=>{ try{ let d=JSON.parse(ev.target.result); this.importDataObject(d); }catch(e){this.showMessage('Invalid JSON');} }; reader.readAsText(e.target.files[0]); }};
+
+        // Housecheck
+        this.$$('.day-tab').forEach(t=>t.onclick=()=>{this.$$('.day-tab').forEach(tt=>tt.classList.remove('active')); t.classList.add('active'); this.houseCurrentDay=t.dataset.day; this.renderHousecheck();});
+        const houseFilter = this.$('#houseStatusFilter'); if(houseFilter) houseFilter.onchange=()=>{let f=houseFilter.value; this.$$('.property').forEach(p=>{let s=parseInt(p.dataset.status); p.style.display=(f==='All'||this.houseStatusNames[s]===f)?'flex':'none';});};
+        const copyReport = this.$('#copyHouseReport'); if(copyReport) copyReport.onclick=()=>this.copyHouseReport();
+        const whatsapp = this.$('#whatsappHouseReport'); if(whatsapp) whatsapp.onclick=()=>this.shareViaWhatsApp();
+        const startCountdown = this.$('#startHouseCountdown'); if(startCountdown) startCountdown.onclick=()=>this.startHouseCountdown();
+        const addHouseNoteBtn = this.$('#addHouseNote'); if(addHouseNoteBtn) addHouseNoteBtn.onclick=()=>this.addHouseNote();
+        const lockBtn = this.$('#lockHouseBtn'); if(lockBtn) lockBtn.onclick=()=>this.toggleHouseLock();
+      }
+
+      // calculator helpers
+      inputDigit(d){ if(this.calcWaitingForOperand){ this.calcValue=d; this.calcWaitingForOperand=false; }else{ this.calcValue=this.calcValue==='0'?d:this.calcValue+d; } this.updateCalcDisplay(); }
+      inputDecimal(){ if(this.calcWaitingForOperand){ this.calcValue='0.'; this.calcWaitingForOperand=false; }else if(this.calcValue.indexOf('.')===-1) this.calcValue+='.'; this.updateCalcDisplay(); }
+      handleOperator(op){ let v=parseFloat(this.calcValue); if(this.calcOperator&&!this.calcWaitingForOperand){ let r=this.performCalculation(); this.calcValue=String(r); this.calcOperand=r; }else this.calcOperand=v; this.calcWaitingForOperand=true; this.calcOperator=op; this.updateCalcDisplay(); }
+      performCalculation(){ let v=parseFloat(this.calcValue); switch(this.calcOperator){ case'+':return this.calcOperand+v; case'-':return this.calcOperand-v; case'*':return this.calcOperand*v; case'/':return this.calcOperand/v; default:return v;} }
+      calculate(){ if(this.calcOperator&&!this.calcWaitingForOperand){ this.calcValue=String(this.performCalculation()); this.calcOperator=null; this.calcOperand=0; this.calcWaitingForOperand=true; this.updateCalcDisplay(); } }
+      clearCalculator(){ this.calcValue='0'; this.calcOperator=null; this.calcOperand=0; this.calcWaitingForOperand=false; this.updateCalcDisplay(); }
+      clearEntry(){ this.calcValue='0'; this.updateCalcDisplay(); }
+      backspace(){ if(this.calcValue.length>1) this.calcValue=this.calcValue.slice(0,-1); else this.calcValue='0'; this.updateCalcDisplay(); }
+      updateCalcDisplay(){ const d = this.$('#calcDisplay'); if(d) d.textContent=this.calcValue; }
+    }
+
+    // ---------- FILE STORAGE ----------
+    const fileStorage = {
+      currentFileHandle: null,
+      autoSaveTimer: null,
+      isAutoSaveEnabled: true,
+      saveIntervalSeconds: 5,
+      dirty: false,
+      DB_NAME: 'FileHandleDB', STORE_NAME: 'handles', HANDLE_KEY: 'jsonFileHandle',
+
+      async openIDB() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(this.DB_NAME, 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+          request.onupgradeneeded = (ev) => {
+            const db = ev.target.result;
+            if (!db.objectStoreNames.contains(this.STORE_NAME)) db.createObjectStore(this.STORE_NAME);
+          };
+        });
+      },
+      async storeHandle(handle) {
+        if (!handle) return;
+        const db = await this.openIDB();
+        const tx = db.transaction(this.STORE_NAME, 'readwrite');
+        const store = tx.objectStore(this.STORE_NAME);
+        await new Promise((res, rej) => { const r = store.put(handle, this.HANDLE_KEY); r.onsuccess = res; r.onerror = rej; });
+        await tx.done; db.close();
+      },
+      async loadStoredHandle() {
+        try {
+          const db = await this.openIDB();
+          const tx = db.transaction(this.STORE_NAME, 'readonly');
+          const store = tx.objectStore(this.STORE_NAME);
+          const handle = await new Promise((res, rej) => { const r = store.get(this.HANDLE_KEY); r.onsuccess = () => res(r.result); r.onerror = rej; });
+          db.close(); return handle;
+        } catch (e) { return null; }
+      },
+      async hasReadPermission(handle) { if(!handle) return false; const state = await handle.queryPermission({ mode: 'read' }); return state === 'granted'; },
+      async hasWritePermission(handle) { if(!handle) return false; const state = await handle.queryPermission({ mode: 'readwrite' }); return state === 'granted'; },
+      async requestReadPermission(handle) { try { return (await handle.requestPermission({ mode: 'read' })) === 'granted'; } catch { return false; } },
+      async requestWritePermission(handle) { try { return (await handle.requestPermission({ mode: 'readwrite' })) === 'granted'; } catch { return false; } },
+
+      async updateUI() {
+        const nameEl = document.getElementById('fileNameDisplay');
+        const warnEl = document.getElementById('permissionWarning');
+        const statusEl = document.getElementById('autoSaveStatus');
+        if (this.currentFileHandle) {
+          if(nameEl) nameEl.textContent = `📄 ${this.currentFileHandle.name}`;
+          const readOk = await this.hasReadPermission(this.currentFileHandle);
+          const writeOk = await this.hasWritePermission(this.currentFileHandle);
+          if(warnEl) warnEl.style.display = (!readOk || !writeOk) ? 'block' : 'none';
+        } else {
+          if(nameEl) nameEl.textContent = 'No file selected';
+          if(warnEl) warnEl.style.display = 'none';
+        }
+        this.updateSizeDisplay();
+        if (!this.currentFileHandle && statusEl) statusEl.textContent = '⏸️ No file – auto‑save disabled';
+        else if (!this.isAutoSaveEnabled && statusEl) statusEl.textContent = '⏸️ Auto‑save paused';
+        else if(statusEl) statusEl.textContent = `⏱️ Auto‑save every ${this.saveIntervalSeconds}s`;
+      },
+      updateSizeDisplay() {
+        if (!window.pda) return;
+        const data = window.pda.exportAllData();
+        const bytes = new Blob([JSON.stringify(data)]).size;
+        const kb = bytes/1024, mb = kb/1024;
+        let str = bytes<1024 ? `${bytes} B` : (kb<1024 ? `${kb.toFixed(2)} KB` : `${mb.toFixed(2)} MB`);
+        const sizeEl = document.getElementById('sizeDisplay');
+        if(sizeEl) sizeEl.textContent = str;
+      },
+      markDirty() { this.dirty = true; this.updateSizeDisplay(); },
+      async loadFromHandle() {
+        if (!this.currentFileHandle) return;
+        try {
+          if (!(await this.hasReadPermission(this.currentFileHandle))) await this.requestReadPermission(this.currentFileHandle);
+          const file = await this.currentFileHandle.getFile();
+          const text = await file.text();
+          const data = JSON.parse(text);
+          if (window.pda) window.pda.importDataObject(data);
+          await this.updateUI();
+          const statusEl = document.getElementById('autoSaveStatus');
+          if(statusEl) statusEl.textContent = `✅ Loaded from ${this.currentFileHandle.name}`;
+        } catch (e) { alert('Load failed: ' + e.message); await this.updateUI(); }
+      },
+      async saveToHandle() {
+        if (!this.currentFileHandle) { alert('Select a file first'); return false; }
+        try {
+          if (!(await this.hasWritePermission(this.currentFileHandle))) await this.requestWritePermission(this.currentFileHandle);
+          if (!window.pda) return false;
+          const data = window.pda.exportAllData();
+          const writable = await this.currentFileHandle.createWritable();
+          await writable.write(JSON.stringify(data, null, 2));
+          await writable.close();
+          this.dirty = false;
+          this.updateSizeDisplay();
+          const statusEl = document.getElementById('autoSaveStatus');
+          if(statusEl) statusEl.textContent = `💾 Saved at ${new Date().toLocaleTimeString()}`;
+          await this.updateUI();
+          return true;
+        } catch (e) { alert('Save failed: ' + e.message); await this.updateUI(); return false; }
+      },
+      restartTimer() {
+        if (this.autoSaveTimer) clearInterval(this.autoSaveTimer);
+        this.autoSaveTimer = null;
+        if (!this.currentFileHandle || !this.isAutoSaveEnabled) return;
+        this.autoSaveTimer = setInterval(async () => {
+          if (!this.currentFileHandle || !this.isAutoSaveEnabled) return;
+          if (this.dirty) await this.saveToHandle();
+        }, this.saveIntervalSeconds * 1000);
+      },
+      async setHandle(handle) {
+        this.currentFileHandle = handle;
+        await this.updateUI();
+        if (handle) await this.storeHandle(handle);
+        this.restartTimer();
+      },
+      async pickFile() {
+        try {
+          if (!window.showOpenFilePicker) { alert('File System Access API not supported.'); return; }
+          const [handle] = await window.showOpenFilePicker({ types: [{ description: 'JSON', accept: {'application/json': ['.json']} }], multiple: false });
+          await this.setHandle(handle);
+          await this.loadFromHandle();
+        } catch (e) { if (e.name !== 'AbortError') alert('Picker error'); }
+      },
+      async newFile() {
+        try {
+          if (!window.showSaveFilePicker) { alert('File System Access API not supported.'); return; }
+          const handle = await window.showSaveFilePicker({ suggestedName: `pda_${Date.now()}.json`, types: [{ description: 'JSON', accept: {'application/json': ['.json']} }] });
+          await this.setHandle(handle);
+          await this.saveToHandle();
+          const statusEl = document.getElementById('autoSaveStatus');
+          if(statusEl) statusEl.textContent = `🆕 New file: ${handle.name}`;
+        } catch (e) { if (e.name !== 'AbortError') alert('Could not create file'); }
+      }
+    };
+
+    window.fileStorage = fileStorage;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        window.pda = new PDApp();
+      } catch (e) {
+        console.error('PDA init error:', e);
+        alert('PDA failed to start. Please check the console.');
+        return;
+      }
+
+      // File storage init
+      if (!window.showOpenFilePicker && !window.showSaveFilePicker) {
+        const warn = document.getElementById('permissionWarning');
+        if(warn) { warn.style.display = 'block'; warn.textContent = '⚠️ File API not supported. Use Chrome/Edge.'; }
+      }
+      try {
+        const stored = await fileStorage.loadStoredHandle();
+        if (stored) {
+          fileStorage.currentFileHandle = stored;
+          await fileStorage.updateUI();
+          if (await fileStorage.hasReadPermission(stored)) {
+            try { await fileStorage.loadFromHandle(); } catch {}
+          }
+        }
+        fileStorage.restartTimer();
+      } catch (e) {
+        console.warn('File storage init error:', e);
+      }
+
+      // Wire file UI (guaranteed safe)
+      const pickFileBtn = document.getElementById('pickFileBtn');
+      const newFileBtn = document.getElementById('newFileBtn');
+      const loadBtn = document.getElementById('loadBtn');
+      const saveBtn = document.getElementById('saveBtn');
+      const autoSaveToggle = document.getElementById('autoSaveToggle');
+      const intervalSlider = document.getElementById('intervalSlider');
+
+      if(pickFileBtn) pickFileBtn.onclick = () => fileStorage.pickFile();
+      if(newFileBtn) newFileBtn.onclick = () => fileStorage.newFile();
+      if(loadBtn) loadBtn.onclick = () => fileStorage.loadFromHandle();
+      if(saveBtn) saveBtn.onclick = () => fileStorage.saveToHandle();
+      if(autoSaveToggle) autoSaveToggle.onchange = (e) => { fileStorage.isAutoSaveEnabled = e.target.checked; fileStorage.restartTimer(); };
+      if(intervalSlider) {
+        intervalSlider.oninput = (e) => {
+          fileStorage.saveIntervalSeconds = parseInt(e.target.value);
+          const iv = document.getElementById('intervalValue');
+          if(iv) iv.textContent = fileStorage.saveIntervalSeconds + ' sec';
+          fileStorage.restartTimer();
+        };
+      }
+    });
+  })();
+</script>
+</body>
+</html>
